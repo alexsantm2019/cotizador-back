@@ -13,4 +13,5 @@ urlpatterns = [
     # Envio de PDF y Whatsapp:
     path('enviar_correo/<int:cotizacion_id>', views.enviar_correo, name='enviar_correo'),
     path('enviar_whatsapp/<int:cotizacion_id>', views.enviar_whatsapp, name='enviar_whatsapp'),
+    path('download_pdf/<int:cotizacion_id>', views.download_pdf, name='download_pdf'),
 ]

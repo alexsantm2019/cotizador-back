@@ -1,7 +1,6 @@
 from django.shortcuts import render
 # Create your views here.
-from django.http import HttpResponse
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse, HttpResponse
 from .models import Cotizacion, CotizacionDetalle
 from .serializers import CotizacionSerializer
 from .serializers import CotizacionDetalleSerializer
@@ -382,6 +381,19 @@ def enviar_correo(request, cotizacion_id):
         return JsonResponse({'message': 'Correo enviado con éxito'}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_POST
+def download_pdf(request, cotizacion_id):
+    # Generar el PDF
+    pdf_path = generar_pdf(cotizacion_id)
+
+    # Validar si se generó correctamente
+    if not pdf_path or not os.path.exists(pdf_path):
+        return JsonResponse({'error': 'No se pudo generar el PDF'}, status=500)
+
+    # Retornar el archivo como respuesta
+    return FileResponse(open(pdf_path, 'rb'), content_type='application/pdf')        
 
 @csrf_exempt
 def enviar_whatsapp(request, cotizacion_id):
