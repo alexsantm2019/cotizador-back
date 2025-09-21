@@ -5,7 +5,18 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         # Llama al método validate del padre para obtener los tokens
         data = super().validate(attrs)
         
-        # Agrega el ID del usuario a la respuesta
+        # Se añaden mas datos a la api de respuesta
         data['user_id'] = self.user.id
+        data['username'] = self.user.username
+        data['first_name'] = self.user.first_name
+        data['last_name'] = self.user.last_name
+        data['email'] = self.user.email
+
+        if self.user.first_name and self.user.last_name:
+            full_name = f"{self.user.first_name} {self.user.last_name}"        
+        else:
+            full_name = self.user.first_name  
+
+        data['full_name'] = full_name
         
         return data
