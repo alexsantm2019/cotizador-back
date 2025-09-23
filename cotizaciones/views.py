@@ -247,7 +247,7 @@ def generar_pdf(cotizacion_id):
     elements = []
 
     # Ruta completa del logo en la subcarpeta LOGOS
-    logo_path = os.path.join(settings.MEDIA_ROOT, 'LOGOS', 'logo_mundi.jpg')  # Cambia 'logo.png' por el nombre de tu logo
+    logo_path = os.path.join(settings.MEDIA_ROOT, 'logos', 'logo_mundi.jpg')  # Cambia 'logo.png' por el nombre de tu logo
 
     # Incluir el logo en el PDF
     logo = Image(logo_path, width=5*cm, height=2*cm)  # Ajusta las dimensiones del logo
