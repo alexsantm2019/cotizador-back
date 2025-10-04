@@ -1,7 +1,6 @@
 from django.shortcuts import render
 # Create your views here.
 from django.http import FileResponse, JsonResponse, HttpResponse
-from .models import Cotizacion, CotizacionDetalle
 from .serializers import CotizacionSerializer
 from .serializers import CotizacionDetalleSerializer
 from rest_framework import status
@@ -16,24 +15,37 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.views.decorators.http import require_POST
+
+# Modelos 
 from .models import Producto
+from .models import Catalogo
+from .models import Cotizacion, CotizacionDetalle
 
 # Para enviar PDF y whatsapp:
 from django.core.mail import EmailMessage
 from django.views.decorators.csrf import csrf_exempt
-import os
 from reportlab.pdfgen import canvas
+import locale, os
+from datetime import datetime
+
 
 #Tablas:
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
-from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
 from reportlab.platypus import Paragraph
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from reportlab.lib.units import cm
 from reportlab.platypus import Image
 from datetime import datetime
+
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Table, TableStyle, Image, Spacer
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 
 @api_view(['GET'])
 def get_cotizaciones(request):
@@ -227,65 +239,129 @@ def delete_cotizacion(request, id):
 
 def generar_pdf(cotizacion_id):
     try:
-        cotizacion = Cotizacion.objects.select_related('cliente').prefetch_related('detalles__producto').get(
-            id=cotizacion_id, deleted_at__isnull=True
-        )              
+        cotizacion = Cotizacion.objects.get(id=cotizacion_id, deleted_at__isnull=True)
     except ObjectDoesNotExist:
-        return None  # Si la cotización no existe, retorna None
+        return None
 
-    # Directorio de destino
     media_dir = settings.MEDIA_ROOT
     if not os.path.exists(media_dir):
         os.makedirs(media_dir)
 
-    # Nombre del archivo PDF
     filename = f"cotizacion_{cotizacion.id}.pdf"
     filepath = os.path.join(media_dir, filename)
 
-    # Crear el PDF
-    doc = SimpleDocTemplate(filepath, pagesize=letter)
+    # Documento PDF
+    doc = SimpleDocTemplate(filepath, pagesize=letter,
+                            rightMargin=40, leftMargin=40,
+                            topMargin=40, bottomMargin=30)
     elements = []
 
-    # Ruta completa del logo en la subcarpeta LOGOS
-    logo_path = os.path.join(settings.MEDIA_ROOT, 'logos', 'logo_mundi.jpg')  # Cambia 'logo.png' por el nombre de tu logo
+    # LOGO
+    logo_path = os.path.join(settings.MEDIA_ROOT, 'logos', 'logo_mundi.jpg')
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=6 * cm, height=2.5 * cm)
+        logo.hAlign = 'CENTER'
+        elements.append(logo)
+        elements.append(Spacer(1, 10))
 
-    # Incluir el logo en el PDF
-    logo = Image(logo_path, width=5*cm, height=2*cm)  # Ajusta las dimensiones del logo
-    logo.hAlign = 'CENTER'  # Centrar el logo
-    elements.append(logo)
-    elements.append(Spacer(1, 12))  # Espacio después del logo
+    # Estilos
+    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+    styles = getSampleStyleSheet()
 
-    # Datos de la primera tabla (información del cliente)
+    estilo_titulo = ParagraphStyle(
+        "Titulo",
+        parent=styles["Heading1"],
+        fontSize=16,
+        textColor=colors.HexColor("#2E4053"),
+        alignment=TA_CENTER,
+        spaceAfter=10
+    )
+
+    estilo_bold = ParagraphStyle(
+        "Bold",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#1C2833"),
+        fontSize=10
+    )
+
+    estilo_normal = ParagraphStyle(
+        "Normal",
+        parent=styles["Normal"],
+        textColor=colors.HexColor("#2E4053"),
+        fontSize=10
+    )
+
+    estilo_tabla_header = ParagraphStyle(
+        "Header",
+        parent=styles["Normal"],
+        alignment=TA_CENTER,
+        fontName="Helvetica-Bold",
+        textColor=colors.white,
+        fontSize=10
+    )
+
+    estilo_footer = ParagraphStyle(
+        "Footer",
+        parent=styles["Normal"],
+        textColor=colors.HexColor("#2E4053"),
+        fontSize=10,
+        alignment=TA_LEFT
+    )
+
+    # Información del cliente
     cliente = cotizacion.cliente
+    tipo_evento_nombre = "N/A"
+    if cotizacion.tipo_evento:
+        catalogo = Catalogo.objects.filter(codigo=cotizacion.tipo_evento, grupo=4).first()
+        if catalogo:
+            tipo_evento_nombre = catalogo.item
+
+    usuario = "Ninguno"
+    if cotizacion.user:
+        first_name = cotizacion.user.first_name if cotizacion.user.first_name else ""
+        last_name = cotizacion.user.last_name if cotizacion.user.last_name else ""
+        usuario = f"{first_name} {last_name}".strip() if first_name or last_name else cotizacion.user.username
+
+    # --- Encabezado del documento ---
+    elements.append(Paragraph("COTIZACIÓN DE SERVICIOS", estilo_titulo))
+    elements.append(Spacer(1, 15))
+
+    # --- Datos del cliente ---
     data_cliente = [
-        ["Fecha de Creación:", str(cotizacion.fecha_creacion.strftime("%d/%m/%Y"))],
-        ["Nombre del Cliente:", cliente.nombre],
+        ["Fecha del Evento:", cotizacion.fecha_evento.strftime("%A, %d de %B del %Y").capitalize()],
+        ["Tipo del Evento:", tipo_evento_nombre],
+        ["Duración del Evento:", f"{cotizacion.duracion_evento} horas" if cotizacion.duracion_evento else "N/A"],
+        ["Cliente:", cliente.nombre],
         ["Dirección:", cliente.direccion if cliente.direccion else "N/A"],
         ["Teléfono:", cliente.telefono if cliente.telefono else "N/A"],
-        ["Correo:", cliente.correo if cliente.correo else "N/A"]
+        ["Correo:", cliente.correo if cliente.correo else "N/A"],
+        ["Vigencia:", cotizacion.fecha_vigencia.strftime("%A, %d de %B del %Y").capitalize()],
+        ["Creado por:", usuario],
     ]
 
-    # Estilos para texto en la tabla
-    styles = getSampleStyleSheet()
-    estilo_bold = styles["Normal"]
-    estilo_bold.fontName = "Helvetica-Bold"  # Texto en negrita
+    tabla_cliente = Table(
+        [[Paragraph(f"<b>{item[0]}</b>", estilo_bold), Paragraph(str(item[1]), estilo_normal)] for item in data_cliente],
+        colWidths=[5 * cm, 11 * cm],
+        hAlign="LEFT"
+    )
 
-    # Tabla con datos del cliente
-    data_cliente_bold = [
-        [Paragraph(f"<b>{item[0]}</b>", estilo_bold), item[1]] for item in data_cliente
-    ]
-    
-    tabla_cliente = Table(data_cliente_bold, colWidths=[5 * cm, 11 * cm])  # Ocupar 100% de la página
-    tabla_cliente.setStyle(TableStyle([]))  # Sin bordes ni colores
+    tabla_cliente.setStyle(TableStyle([
+        # ("LINEBELOW", (0, 0), (-1, -1), 0.25, colors.HexColor("#D5DBDB")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+
     elements.append(tabla_cliente)
-    elements.append(Spacer(1, 20))  # Espacio entre tablas
+    elements.append(Spacer(1, 20))
 
-    # Estilo cursiva para descripción
-    estilo_cursiva = styles["Italic"]
-    estilo_cursiva.alignment = TA_LEFT  # Alineación a la izquierda para la descripción
-
-    # Datos de la segunda tabla (detalles de la cotización)
-    detalles_data = [["CANTIDAD", "SERVICIO", "VALOR UNITARIO", "VALOR TOTAL"]]
+    # --- Detalles de la cotización ---
+    detalles_data = [
+        [Paragraph("CANTIDAD", estilo_tabla_header),
+         Paragraph("SERVICIO", estilo_tabla_header),
+         Paragraph("VALOR UNITARIO", estilo_tabla_header),
+         Paragraph("VALOR TOTAL", estilo_tabla_header)]
+    ]
 
     for detalle in cotizacion.detalles.all():
         cantidad = int(detalle.cantidad) if detalle.cantidad else 0
@@ -295,59 +371,49 @@ def generar_pdf(cotizacion_id):
 
         servicio = detalle.producto.producto if detalle.producto else "Paquete"
         descripcion = detalle.producto.descripcion if detalle.producto and detalle.producto.descripcion else ""
+        servicio_con_descripcion = Paragraph(f"<b>{servicio}</b><br/><font size=9><i>{descripcion}</i></font>", estilo_normal)
 
-        # Separar el nombre del servicio y la descripción
-        servicio_con_descripcion = Paragraph(f"<b>{servicio}</b><br/><i>{descripcion}</i>")
+        detalles_data.append([
+            Paragraph(str(cantidad), estilo_normal),
+            servicio_con_descripcion,
+            Paragraph(f"${costo_unitario:.2f}", estilo_normal),
+            Paragraph(f"${valor_total:.2f}", estilo_normal),
+        ])
 
-        # Añadir a la fila de la tabla
-        detalles_data.append([cantidad, servicio_con_descripcion, f"${costo_unitario}", f"${valor_total}"])
-
-    # Agregar Subtotal, IVA y Total debajo de las columnas correspondientes
     subtotal = float(cotizacion.subtotal) if cotizacion.subtotal else 0
     iva = float(cotizacion.iva) if cotizacion.iva else 0
     total = float(cotizacion.total) if cotizacion.total else 0
 
-    detalles_data.append(["", "", "Subtotal:", f"${subtotal:.2f}"])
-    detalles_data.append(["", "", "IVA:", f"${iva:.2f}"])
-    detalles_data.append(["", "", "Total:", f"${total:.2f}"])
+    detalles_data += [
+        ["", "", Paragraph("<b>Subtotal:</b>", estilo_bold), Paragraph(f"${subtotal:.2f}", estilo_bold)],
+        ["", "", Paragraph("<b>IVA:</b>", estilo_bold), Paragraph(f"${iva:.2f}", estilo_bold)],
+        ["", "", Paragraph("<b>Total:</b>", estilo_bold), Paragraph(f"${total:.2f}", estilo_bold)],
+    ]
 
     tabla_detalles = Table(detalles_data, colWidths=[3 * cm, 7 * cm, 4 * cm, 4 * cm])
     tabla_detalles.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),  # Encabezado en gris
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),  # Centrar todo el contenido
-        ("ALIGN", (1, 1), (1, -1), "LEFT"),  # Solo la columna "SERVICIO" alineada a la izquierda
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),  # Centrado vertical de toda la tabla
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),  # Bordes en la tabla
-        ("FONTNAME", (-2, -3), (-1, -1), "Helvetica-Bold"),  # Subtotal, IVA y Total en negrita
-        ("ALIGN", (-2, -3), (-1, -1), "CENTER"),  # Alinear valores a la derecha
-        ("BACKGROUND", (-2, -3), (-1, -1), colors.lightgrey),  # Fondo gris para las filas de totales
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1C2833")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#B2BABB")),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (1, 1), (1, -1), "LEFT"),
+        ("BACKGROUND", (-2, -3), (-1, -1), colors.HexColor("#F2F3F4")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
     ]))
-
     elements.append(tabla_detalles)
-    elements.append(Spacer(1, 20))  # Espacio antes del mensaje final
+    elements.append(Spacer(1, 25))
 
-    # Mensaje final
-    usuario = "Ninguno"
-    if cotizacion.user:
-        first_name = cotizacion.user.first_name if cotizacion.user.first_name else ""
-        last_name = cotizacion.user.last_name if cotizacion.user.last_name else ""
-        usuario = f"{first_name} {last_name}".strip() if first_name or last_name else cotizacion.user.username
-
-    mensaje_texto = f"""<para align=left>
-    <span>Validez de la proforma:</span> 24 horas<br/>
+    # --- Mensaje final ---
+    mensaje_texto = f"""
+    <para align=left>
     Cualquier modificación, la podemos realizar sin ningún inconveniente.<br/>
     Si tienes alguna inquietud sobre esta cotización, puedes contactarnos al <b>0984687368</b>.<br/><br/>
-    <span>Creado por:</span> <em>{usuario}</em><br/><br/>
     <b>Somos Grupo MundiEventos</b>
-    </para>"""
+    </para>
+    """
+    elements.append(Paragraph(mensaje_texto, estilo_footer))
 
-    mensaje_final = Paragraph(mensaje_texto, styles["Normal"])
-    elements.append(mensaje_final)
-
-    # Generar PDF
+    # Construir PDF
     doc.build(elements)
     return filepath
 

@@ -22,6 +22,14 @@ class Cotizacion(models.Model):
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     estado = models.PositiveSmallIntegerField(default=1, null=True, blank=True)
+
+    # Nuevos campos
+    fecha_vigencia = models.DateTimeField(null=True, blank=True)
+    fecha_evento = models.DateTimeField(null=True, blank=True)
+    nombre_evento = models.CharField(max_length=100, null=True, blank=True)
+    tipo_evento = models.PositiveSmallIntegerField(null=True, blank=True)
+    duracion_evento = models.PositiveSmallIntegerField(null=True, blank=True)
+
     deleted_at = models.DateTimeField(null=True, blank=True)
 
     # Agrega el campo user como ForeignKey al modelo User de Django
@@ -33,6 +41,15 @@ class Cotizacion(models.Model):
         related_name='cotizaciones',
         db_column='user_id'
     )
+
+    # evento = models.ForeignKey(
+    #     Catalogo,
+    #     on_delete=models.CASCADE,
+    #     null=True,
+    #     blank=True,
+    #     related_name='cotizaciones',
+    #     db_column='tipo_evento'
+    # )
 
     def __str__(self):
         # return self.cotizaciones

@@ -38,6 +38,7 @@ class CotizacionSerializer(serializers.ModelSerializer):
     detalles = CotizacionDetalleSerializer(many=True, read_only=True)
     user = serializers.SerializerMethodField()  # Usamos un método para obtener el nombre del usuario
     estado_info = serializers.SerializerMethodField()  # Agregamos un método para obtener la información del estado
+    evento = serializers.SerializerMethodField()  # Agregamos un método para obtener la información del estado
 
     def get_user(self, obj):
         """
@@ -56,7 +57,16 @@ class CotizacionSerializer(serializers.ModelSerializer):
                 'item': estado_catalogo.item,
                 'color': estado_catalogo.color
             }
-        return None  # Si no encuentra el estado          
+        return None  # Si no encuentra el estado  
+
+    def get_evento(self, obj):
+        """Obtiene el estado desde la tabla Catalogo filtrando por grupo=3."""        
+        tipo_evento = Catalogo.objects.filter(grupo=4, codigo=obj.tipo_evento).first()
+        if tipo_evento:
+            return {
+                'item': tipo_evento.item
+            }
+        return None  # Si no encuentra el estado                  
 
     class Meta:
         db_table = 'cotizaciones'
