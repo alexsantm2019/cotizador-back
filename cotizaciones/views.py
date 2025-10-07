@@ -27,7 +27,7 @@ from django.views.decorators.csrf import csrf_exempt
 from reportlab.pdfgen import canvas
 import locale, os
 from datetime import datetime
-
+import re
 
 #Tablas:
 from reportlab.lib.pagesizes import letter
@@ -246,14 +246,7 @@ def generar_pdf(cotizacion_id):
     media_dir = settings.MEDIA_ROOT
     if not os.path.exists(media_dir):
         os.makedirs(media_dir)
-
-    filename = f"cotizacion_{cotizacion.id}.pdf"
-    filepath = os.path.join(media_dir, filename)
-
-    # Documento PDF
-    doc = SimpleDocTemplate(filepath, pagesize=letter,
-                            rightMargin=40, leftMargin=40,
-                            topMargin=40, bottomMargin=30)
+   
     elements = []
 
     # LOGO
@@ -328,15 +321,21 @@ def generar_pdf(cotizacion_id):
     elements.append(Spacer(1, 15))
 
     # --- Datos del cliente ---
+    fecha_evento_texto = cotizacion.fecha_evento.strftime("%A, %d de %B del %Y").capitalize() \
+    if cotizacion.fecha_evento else "N/A"
+
+    fecha_vigencia_texto = cotizacion.fecha_vigencia.strftime("%A, %d de %B del %Y").capitalize() \
+    if cotizacion.fecha_vigencia else "N/A"
+
     data_cliente = [
-        ["Fecha del Evento:", cotizacion.fecha_evento.strftime("%A, %d de %B del %Y").capitalize()],
+        ["Fecha del Evento:", fecha_evento_texto],
         ["Tipo del Evento:", tipo_evento_nombre],
         ["Duración del Evento:", f"{cotizacion.duracion_evento} horas" if cotizacion.duracion_evento else "N/A"],
         ["Cliente:", cliente.nombre],
         ["Dirección:", cliente.direccion if cliente.direccion else "N/A"],
         ["Teléfono:", cliente.telefono if cliente.telefono else "N/A"],
         ["Correo:", cliente.correo if cliente.correo else "N/A"],
-        ["Vigencia:", cotizacion.fecha_vigencia.strftime("%A, %d de %B del %Y").capitalize()],
+        ["Vigencia:", fecha_vigencia_texto],
         ["Creado por:", usuario],
     ]
 
@@ -413,9 +412,40 @@ def generar_pdf(cotizacion_id):
     """
     elements.append(Paragraph(mensaje_texto, estilo_footer))
 
+    # Nombre del archivo PDF
+    nombre_cliente = limpiar_nombre(cliente.nombre)
+
+    if tipo_evento_nombre:
+        nombre_evento = limpiar_nombre(tipo_evento_nombre)
+        filename = f"cotizacion_{nombre_cliente}_{nombre_evento}.pdf"
+    else:
+        filename = f"cotizacion_{nombre_cliente}.pdf"
+    
+    # filename = f"cotizacion_{cotizacion.id}.pdf"
+    filepath = os.path.join(media_dir, filename)
+
+    # Documento PDF
+    doc = SimpleDocTemplate(filepath, pagesize=letter,
+                            rightMargin=40, leftMargin=40,
+                            topMargin=40, bottomMargin=30)
+
     # Construir PDF
     doc.build(elements)
     return filepath
+
+# --- Limpiar texto para nombre de archivo ---
+def limpiar_nombre(texto):
+    """Elimina caracteres especiales y reemplaza espacios por guiones bajos."""
+    if not texto:
+        return "N/A"
+    texto = texto.strip().lower()
+    texto = re.sub(r'[áàäâ]', 'a', texto)
+    texto = re.sub(r'[éèëê]', 'e', texto)
+    texto = re.sub(r'[íìïî]', 'i', texto)
+    texto = re.sub(r'[óòöô]', 'o', texto)
+    texto = re.sub(r'[úùüû]', 'u', texto)
+    texto = re.sub(r'[^a-z0-9_]+', '_', texto)  # Reemplaza todo lo que no sea alfanumérico o guion bajo
+    return texto    
 
 @csrf_exempt
 @require_POST
@@ -450,16 +480,30 @@ def enviar_correo(request, cotizacion_id):
 
 @csrf_exempt
 @require_POST
-def download_pdf(request, cotizacion_id):
-    # Generar el PDF
-    pdf_path = generar_pdf(cotizacion_id)
+# def download_pdf(request, cotizacion_id):
+#     # Generar el PDF
+#     pdf_path = generar_pdf(cotizacion_id)
 
-    # Validar si se generó correctamente
-    if not pdf_path or not os.path.exists(pdf_path):
+#     # Validar si se generó correctamente
+#     if not pdf_path or not os.path.exists(pdf_path):
+#         return JsonResponse({'error': 'No se pudo generar el PDF'}, status=500)
+
+#     # Retornar el archivo como respuesta
+#     return FileResponse(open(pdf_path, 'rb'), content_type='application/pdf') 
+
+def download_pdf(request, cotizacion_id):
+    filepath = generar_pdf(cotizacion_id)  # genera el PDF y devuelve la ruta completa
+    filename = os.path.basename(filepath)  # extrae solo el nombre, sin ruta
+    filename = filename.replace(" ", "_")
+
+    #     # Validar si se generó correctamente
+    if not filepath or not os.path.exists(filepath):
         return JsonResponse({'error': 'No se pudo generar el PDF'}, status=500)
 
-    # Retornar el archivo como respuesta
-    return FileResponse(open(pdf_path, 'rb'), content_type='application/pdf')        
+    # Retornar el archivo como respuesta con encabezado de nombre
+    response = FileResponse(open(filepath, 'rb'), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response       
 
 @csrf_exempt
 def enviar_whatsapp(request, cotizacion_id):

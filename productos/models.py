@@ -10,7 +10,8 @@ from catalogos.serializers import CatalogoSerializer
 class Producto(models.Model):
     id = models.AutoField(primary_key=True) 
     producto = models.CharField(max_length=100, null=True, blank=True)
-    descripcion = models.TextField(max_length=200, null=True, blank=True)
+    # descripcion = models.TextField(max_length=200, null=True, blank=True)
+    descripcion = models.TextField(null=True, blank=True)
     tipo_costo = models.PositiveSmallIntegerField(null=True, blank=True) # Mantenerlo como IntegerField ( si no es FK)
     costo = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     estado = models.IntegerField(null=True, blank=True) # Mantenerlo como IntegerField ( si no es FK)

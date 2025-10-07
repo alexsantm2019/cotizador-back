@@ -28,10 +28,12 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 CORS_ORIGIN_ALLOW_ALL = True
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
     # Agrega más orígenes si es necesario
 ]
+
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -42,8 +44,13 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
-    'access-control-allow-origin' 
+    'access-control-allow-origin'
 ]
+
+CORS_EXPOSE_HEADERS = [
+    'Content-Disposition',
+]
+
 CORS_ORIGIN_WHITELIST =(
     'http://localhost:4200'
 )
