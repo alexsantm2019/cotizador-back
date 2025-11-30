@@ -16,11 +16,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name='catalogo',
-            name='color',
-            field=models.CharField(blank=True, max_length=20, null=True),
-        ),
-        migrations.AddField(
-            model_name='catalogo',
             name='deleted_at',
             field=models.DateTimeField(blank=True, null=True),
         ),
