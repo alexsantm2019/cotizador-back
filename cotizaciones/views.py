@@ -381,11 +381,12 @@ def generar_pdf(cotizacion_id):
 
     subtotal = float(cotizacion.subtotal) if cotizacion.subtotal else 0
     iva = float(cotizacion.iva) if cotizacion.iva else 0
+    valorIva = (float(cotizacion.iva) * subtotal )/100
     total = float(cotizacion.total) if cotizacion.total else 0
 
     detalles_data += [
         ["", "", Paragraph("<b>Subtotal:</b>", estilo_bold), Paragraph(f"${subtotal:.2f}", estilo_bold)],
-        ["", "", Paragraph("<b>IVA:</b>", estilo_bold), Paragraph(f"${iva:.2f}", estilo_bold)],
+        ["", "", Paragraph("<b>IVA:</b>", estilo_bold), Paragraph(f"${valorIva:.2f}", estilo_bold)],
         ["", "", Paragraph("<b>Total:</b>", estilo_bold), Paragraph(f"${total:.2f}", estilo_bold)],
     ]
 
