@@ -223,7 +223,7 @@ def delete_cotizacion(request, id):
     try:
         # Actualizar deleted_at de la cotización
         cotizacion = Cotizacion.objects.get(id=id, deleted_at__isnull=True)
-        now = datetime.datetime.now()
+        now = datetime.now()
         cotizacion.deleted_at = now
         cotizacion.save()
 
@@ -421,6 +421,8 @@ def generar_pdf(cotizacion_id):
         filename = f"cotizacion_{nombre_cliente}_{nombre_evento}.pdf"
     else:
         filename = f"cotizacion_{nombre_cliente}.pdf"
+
+    filename = filename.upper()
     
     # filename = f"cotizacion_{cotizacion.id}.pdf"
     filepath = os.path.join(media_dir, filename)
