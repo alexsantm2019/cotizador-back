@@ -72,6 +72,11 @@ class Cotizacion(models.Model):
         managed = True
         verbose_name = 'cotizaciones'
         verbose_name_plural = 'cotizaciones'
+        indexes = [
+            models.Index(fields=['fecha_creacion']),
+            models.Index(fields=['deleted_at']),
+            models.Index(fields=['fecha_creacion', 'deleted_at']),
+        ]
 
 class CotizacionDetalle(models.Model):
     cantidad = models.CharField(max_length=45, null=True, blank=True)

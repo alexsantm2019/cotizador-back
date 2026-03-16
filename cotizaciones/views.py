@@ -46,6 +46,9 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Prefetch
+from django.utils import timezone
+
 
 @api_view(['GET'])
 def get_cotizaciones(request):
@@ -74,7 +77,6 @@ def get_cotizaciones_by_fecha(request, year, month=None):
         return Response({"detail": "El año es obligatorio."}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        # Convertir el año y mes a enteros si es necesario
         year = int(year)
         if month:
             month = int(month)
@@ -83,29 +85,37 @@ def get_cotizaciones_by_fecha(request, year, month=None):
 
     # Definir los límites para el filtro de fecha
     if month:
-        # Crear la fecha de inicio y fin para el mes especificado
         start_date = datetime(year, month, 1)
         if month == 12:
-            end_date = datetime(year + 1, 1, 1)  # Para diciembre, el mes siguiente es enero del siguiente año
+            end_date = datetime(year + 1, 1, 1)
         else:
-            end_date = datetime(year, month + 1, 1)  # El primer día del siguiente mes
+            end_date = datetime(year, month + 1, 1)
     else:
-        # Si no hay mes, solo se filtra por el año
         start_date = datetime(year, 1, 1)
-        end_date = datetime(year + 1, 1, 1)  # El primer día del siguiente año
+        end_date = datetime(year + 1, 1, 1)
 
-    # Filtrar las cotizaciones dentro del rango de fechas
+    # SOLO CAMBIAMOS ESTA PARTE: Usamos 'detalles' en lugar de 'cotizaciondetalle_set'
     cotizaciones = Cotizacion.objects.filter(
-        fecha_creacion__gte=start_date, fecha_creacion__lt=end_date, deleted_at__isnull=True
+        fecha_creacion__gte=start_date, 
+        fecha_creacion__lt=end_date, 
+        deleted_at__isnull=True
+    ).select_related(
+        'cliente',  # Para info_cliente
+        'user'      # Para get_user
+    ).prefetch_related(
+        Prefetch(
+            'detalles',  # ¡CAMBIADO! Ahora usa el related_name correcto
+            queryset=CotizacionDetalle.objects.select_related(
+                'producto', 
+                'paquete'
+            )
+        )
     ).order_by('-id')
 
-    # Verificar si hay cotizaciones
-    if not cotizaciones:
+    if not cotizaciones.exists():  # Pequeña optimización: exists() es más eficiente que convertir a lista
         return Response([], status=status.HTTP_200_OK)
 
-    # Serializar las cotizaciones
     serializer = CotizacionSerializer(cotizaciones, many=True, context={'request': request})
-
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['POST'])

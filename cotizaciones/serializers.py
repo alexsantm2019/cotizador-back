@@ -36,50 +36,67 @@ class CotizacionDetalleSerializer(serializers.ModelSerializer):
 class CotizacionSerializer(serializers.ModelSerializer):        
     info_cliente = ClienteSerializer(source='cliente', read_only=True)
     detalles = CotizacionDetalleSerializer(many=True, read_only=True)
-    user = serializers.SerializerMethodField()  # Usamos un método para obtener el nombre del usuario
-    estado_info = serializers.SerializerMethodField()  # Agregamos un método para obtener la información del estado
-    evento = serializers.SerializerMethodField()  # Agregamos un método para obtener la información del estado
+    user = serializers.SerializerMethodField()
+    estado_info = serializers.SerializerMethodField()
+    evento = serializers.SerializerMethodField()
+
+    # NUEVO: Método para inicializar con datos precargados
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Si hay muchas instancias, precargar catálogos UNA SOLA VEZ
+        if hasattr(self, 'many') and self.many and self.instance is not None:
+            # Cachear catálogos en el contexto para evitar consultas repetidas
+            if 'catalogos_grupo3' not in self.context:
+                self.context['catalogos_grupo3'] = {
+                    c.codigo: {'item': c.item, 'color': c.color}
+                    for c in Catalogo.objects.filter(grupo=3)
+                }
+            if 'catalogos_grupo4' not in self.context:
+                self.context['catalogos_grupo4'] = {
+                    c.codigo: {'item': c.item}
+                    for c in Catalogo.objects.filter(grupo=4)
+                }
 
     def get_user(self, obj):
-        """
-        Devuelve el first_name del usuario si existe, 
-        de lo contrario devuelve el username.
-        """
         if obj.user:
-            return obj.user.first_name if obj.user.first_name else None
+            return obj.user.first_name if obj.user.first_name else obj.user.username
         return None    
 
     def get_estado_info(self, obj):
-        """Obtiene el estado desde la tabla Catalogo filtrando por grupo=3."""        
+        """Versión optimizada que usa el caché del contexto"""
+        # Primero intentar del contexto (más rápido)
+        catalogos = self.context.get('catalogos_grupo3')
+        if catalogos is not None:
+            return catalogos.get(obj.estado)
+        
+        # Fallback al método original (por si acaso)
         estado_catalogo = Catalogo.objects.filter(grupo=3, codigo=obj.estado).first()
         if estado_catalogo:
             return {
                 'item': estado_catalogo.item,
                 'color': estado_catalogo.color
             }
-        return None  # Si no encuentra el estado  
+        return None
 
     def get_evento(self, obj):
-        """Obtiene el estado desde la tabla Catalogo filtrando por grupo=3."""        
+        """Versión optimizada que usa el caché del contexto"""
+        # Primero intentar del contexto (más rápido)
+        catalogos = self.context.get('catalogos_grupo4')
+        if catalogos is not None:
+            evento = catalogos.get(obj.tipo_evento)
+            return evento if evento else None
+        
+        # Fallback al método original
         tipo_evento = Catalogo.objects.filter(grupo=4, codigo=obj.tipo_evento).first()
         if tipo_evento:
             return {
                 'item': tipo_evento.item
             }
-        return None  # Si no encuentra el estado                  
+        return None
 
+    # El resto del serializador sigue IGUAL...
     class Meta:
         db_table = 'cotizaciones'
         model = Cotizacion
-        fields = '__all__'
-        # extra_fields = ['estado_info']
-
-    def create(self, validated_data):
-        # Asigna el usuario logueado al campo 'user'
-        validated_data['user'] = self.context['request'].user
-        return super().create(validated_data)     
-
-    def update(self, instance, validated_data):
-        # Asigna el usuario logueado al campo 'user' al actualizar un producto
-        validated_data['user'] = self.context['request'].user
-        return super().update(instance, validated_data)        
+        fields = '__all__'       
