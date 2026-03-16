@@ -100,3 +100,42 @@ class CotizacionSerializer(serializers.ModelSerializer):
         db_table = 'cotizaciones'
         model = Cotizacion
         fields = '__all__'       
+
+
+class CotizacionFastListSerializer(serializers.ModelSerializer):
+    """Serializador RÁPIDO para listas - datos mínimos"""
+    cliente_nombre = serializers.CharField(source='cliente.nombre', read_only=True)
+    cliente_identificacion = serializers.CharField(source='cliente.identificacion', read_only=True)
+    usuario = serializers.CharField(source='user.first_name', read_only=True, default='')
+    total_detalles = serializers.SerializerMethodField()
+    estado_texto = serializers.SerializerMethodField()
+    tipo_evento_texto = serializers.SerializerMethodField()
+    
+    def get_total_detalles(self, obj):
+        return obj.detalles.count()
+    
+    def get_estado_texto(self, obj):
+        # Cachear en memoria (evita consultas)
+        if not hasattr(self, '_estados_cache'):
+            self._estados_cache = {
+                c.codigo: c.item 
+                for c in Catalogo.objects.filter(grupo=3)
+            }
+        return self._estados_cache.get(obj.estado, '')
+    
+    def get_tipo_evento_texto(self, obj):
+        if not hasattr(self, '_eventos_cache'):
+            self._eventos_cache = {
+                c.codigo: c.item 
+                for c in Catalogo.objects.filter(grupo=4)
+            }
+        return self._eventos_cache.get(obj.tipo_evento, '')
+    
+    class Meta:
+        model = Cotizacion
+        fields = [
+            'id', 'fecha_creacion', 'codigo',
+            'cliente_nombre', 'cliente_identificacion',
+            'usuario', 'total', 'estado_texto', 
+            'tipo_evento_texto', 'total_detalles'
+        ]        
