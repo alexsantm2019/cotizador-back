@@ -126,89 +126,127 @@ def get_cotizaciones_by_fecha(request, year, month=None):
 
 @api_view(['GET'])
 def get_cotizaciones_agrupadas(request, year, month=None):
-    """
-    Endpoint optimizado que devuelve cotizaciones agrupadas por mes
-    - Siempre trae TODOS los meses disponibles en la primera página
-    """
-    # Validar año
-    if not year:
-        return Response(
-            {"detail": "El año es obligatorio."}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    try:
-        year = int(year)
-        if month:
-            month = int(month)
-    except ValueError:
-        return Response(
-            {"detail": "El año y mes deben ser números."}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    # Definir fechas
     from datetime import datetime
-    
+
+    year = int(year)
+    month = int(month) if month else None
+
     if month:
         start_date = datetime(year, month, 1)
-        if month == 12:
-            end_date = datetime(year + 1, 1, 1)
-        else:
-            end_date = datetime(year, month + 1, 1)
+        end_date = datetime(year + (month // 12), (month % 12) + 1, 1)
     else:
         start_date = datetime(year, 1, 1)
         end_date = datetime(year + 1, 1, 1)
-    
-    # ===== CAMBIO IMPORTANTE: SIN PAGINACIÓN GLOBAL =====
-    # Traemos TODAS las cotizaciones del año (sin paginar)
-    cotizaciones_query = Cotizacion.objects.filter(
+
+    queryset = Cotizacion.objects.filter(
         fecha_creacion__gte=start_date,
         fecha_creacion__lt=end_date,
         deleted_at__isnull=True
-    ).select_related(
-        'cliente', 'user'
-    ).order_by('-fecha_creacion')
-    
-    # ===== VERIFICAR SI HAY DATOS =====
-    total_cotizaciones = cotizaciones_query.count()
-    
-    if total_cotizaciones == 0:
-        return Response({
-            'data': [],
-            'pagination': {
-                'total': 0,
+    ).select_related('cliente', 'user').order_by('-fecha_creacion')
+
+    data = build_cotizaciones_data(queryset)
+
+    meses = {}
+    MESES_ES = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ]
+
+    for cot in data:
+        fecha = cot['fecha_creacion']
+        key = fecha.strftime('%Y-%m')
+
+        if key not in meses:
+            meses[key] = {
+                'month_key': key,
+                'month_name': f"{MESES_ES[fecha.month - 1]} {fecha.year}",
+                'month_number': fecha.month,
+                'year': fecha.year,
+                'cotizaciones': [],
+                'total_en_mes': 0,
                 'tiene_mas': False
             }
-        })
+
+        meses[key]['cotizaciones'].append(cot)
+        meses[key]['total_en_mes'] += 1
+
+    page_size = int(request.GET.get('page_size', 20))
+
+    for mes in meses.values():
+        todas = sorted(mes['cotizaciones'], key=lambda x: x['fecha_creacion'], reverse=True)
+        mes['tiene_mas'] = len(todas) > page_size
+        mes['cotizaciones'] = todas[:page_size]
+
+    return Response({
+        'data': sorted(meses.values(), key=lambda x: (x['year'], x['month_number']), reverse=True)
+    })
     
-    # ===== CARGAR TODOS LOS DETALLES =====
+@api_view(['GET'])
+def get_cotizaciones_por_mes(request, year, month):
+    from datetime import datetime
+
+    year = int(year)
+    month = int(month)
+
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 20))
+
+    start_date = datetime(year, month, 1)
+    end_date = datetime(year + (month // 12), (month % 12) + 1, 1)
+
+    queryset = Cotizacion.objects.filter(
+        fecha_creacion__gte=start_date,
+        fecha_creacion__lt=end_date,
+        deleted_at__isnull=True
+    ).select_related('cliente', 'user').order_by('-fecha_creacion')
+
+    total = queryset.count()
+
+    inicio = (page - 1) * page_size
+    fin = inicio + page_size
+
+    data = build_cotizaciones_data(queryset[inicio:fin])
+
+    return Response({
+        "data": data,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "tiene_mas": fin < total
+        }
+    })
+
+def build_cotizaciones_data(cotizaciones_query):
     from collections import defaultdict
-    
+    from catalogos.models import Catalogo
+
     cotizaciones_ids = [c.id for c in cotizaciones_query]
-    
+
     detalles = CotizacionDetalle.objects.filter(
         cotizacion_id__in=cotizaciones_ids
     ).select_related('producto', 'paquete')
-    
+
     detalles_por_cotizacion = defaultdict(list)
     for detalle in detalles:
         detalles_por_cotizacion[detalle.cotizacion_id].append(detalle)
-    
-    # ===== CARGAR CATÁLOGOS =====
-    from catalogos.models import Catalogo
-    
+
     catalogos_grupo3 = {}
     catalogos_grupo4 = {}
-    
+
     for cat in Catalogo.objects.filter(grupo__in=[3, 4]):
         if cat.grupo == 3:
-            catalogos_grupo3[cat.codigo] = {'item': cat.item, 'color': cat.color}
+            catalogos_grupo3[cat.codigo] = {
+                'item': cat.item,
+                'color': cat.color
+            }
         else:
-            catalogos_grupo4[cat.codigo] = {'item': cat.item}
-    
-    # ===== CONSTRUIR RESULTADO =====
+            catalogos_grupo4[cat.codigo] = {
+                'item': cat.item
+            }
+
     resultado = []
+
     for cot in cotizaciones_query:
         cot_data = {
             'id': cot.id,
@@ -217,100 +255,63 @@ def get_cotizaciones_agrupadas(request, year, month=None):
             'fecha_evento': cot.fecha_evento,
             'fecha_vigencia': cot.fecha_vigencia,
             'duracion_evento': cot.duracion_evento,
-            'total': float(cot.total) if cot.total else 0,
-            'subtotal': float(cot.subtotal) if cot.subtotal else 0,
-            'iva': float(cot.iva) if cot.iva else 0,
-            'info_cliente': {
-                'nombre': cot.cliente.nombre if cot.cliente else '',
+            'total': float(cot.total or 0),
+            'subtotal': float(cot.subtotal or 0),
+            'iva': float(cot.iva or 0),
+
+            # 🔥 IMPORTANTE: usar cliente (no info_cliente)
+            'cliente': {
+                'id': cot.cliente.id,
+                'nombre': cot.cliente.nombre
             } if cot.cliente else None,
+
             'user': (
-                cot.user.first_name if cot.user and cot.user.first_name 
+                cot.user.first_name if cot.user and cot.user.first_name
                 else (cot.user.username if cot.user else '')
             ),
-            'estado_info': catalogos_grupo3.get(cot.estado),
-            'evento': catalogos_grupo4.get(cot.tipo_evento),
+            # 'estado_info': catalogos_grupo3.get(cot.estado),
+            'estado_info': {
+                'id': cot.estado,
+                **catalogos_grupo3.get(cot.estado, {})
+            },
+            # 'tipo_evento': catalogos_grupo4.get(cot.tipo_evento),
+            'tipo_evento_info': {
+                'id': cot.tipo_evento,
+                **catalogos_grupo4.get(cot.tipo_evento, {})
+            },
             'detalles': []
         }
-        
-        # Agregar detalles
+
         for det in detalles_por_cotizacion.get(cot.id, []):
             detalle_data = {
                 'id': det.id,
+                'tipo_item': det.tipo_item,  # 🔥 CLAVE
                 'cantidad': det.cantidad,
-                'descuento': float(det.descuento) if det.descuento else 0,
+                'descuento': float(det.descuento or 0),
+
                 'info_producto': None,
                 'info_paquete': None
             }
-            
+
             if det.producto:
                 detalle_data['info_producto'] = {
+                    'id': det.producto.id,  # 🔥 CLAVE
                     'producto': det.producto.producto,
-                    'costo': float(det.producto.costo) if det.producto.costo else 0
+                    'costo': float(det.producto.costo or 0)
                 }
+
             if det.paquete:
                 detalle_data['info_paquete'] = {
+                    'id': det.paquete.id,  # 🔥 CLAVE
                     'nombre_paquete': det.paquete.nombre_paquete,
-                    'precio_total': float(det.paquete.precio_total) if det.paquete.precio_total else 0
+                    'precio_total': float(det.paquete.precio_total or 0)
                 }
-            
-            cot_data['detalles'].append(detalle_data)
-        
-        resultado.append(cot_data)
-    
-    # ===== AGRUPAR POR MES =====
-    meses_dict = {}
-    
-    for cot_data in resultado:
-        fecha = cot_data['fecha_creacion']
-        month_key = fecha.strftime('%Y-%m')
-        month_name = fecha.strftime('%B %Y').capitalize()
-        month_num = fecha.month
-        
-        if month_key not in meses_dict:
-            meses_dict[month_key] = {
-                'month_key': month_key,
-                'month_name': month_name,
-                'month_number': month_num,
-                'year': fecha.year,
-                'cotizaciones': [],
-                'total_en_mes': 0,
-                'pagina_actual': 1,
-                'tiene_mas': False  # Se calculará después si hay más de 20 por mes
-            }
-        
-        meses_dict[month_key]['cotizaciones'].append(cot_data)
-        meses_dict[month_key]['total_en_mes'] += 1
-    
-    # ===== APLICAR PAGINACIÓN POR MES =====
-    page_size = int(request.GET.get('page_size', 20))
-    
-    for month_key, month_data in meses_dict.items():
-        todas = month_data['cotizaciones']
-        # Ordenar por fecha descendente
-        todas.sort(key=lambda x: x['fecha_creacion'], reverse=True)
-        
-        # Aplicar paginación por mes
-        inicio = 0
-        fin = page_size
-        month_data['cotizaciones'] = todas[inicio:fin]
-        month_data['total_en_mes'] = len(todas)
-        month_data['tiene_mas'] = len(todas) > page_size
-    
-    # Convertir a lista y ordenar
-    grouped_result = list(meses_dict.values())
-    grouped_result.sort(key=lambda x: (x['year'], x['month_number']))
-    
-    # ===== RESPUESTA FINAL =====
-    return Response({
-        'data': grouped_result,
-        'pagination': {
-            'total_meses': len(grouped_result),
-            'total_cotizaciones': total_cotizaciones,
-            'page_size': page_size
-        }
-    })
-    
 
+            cot_data['detalles'].append(detalle_data)
+
+        resultado.append(cot_data)
+
+    return resultado 
 
 @api_view(['POST'])
 def create_cotizacion(request):

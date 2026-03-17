@@ -134,7 +134,7 @@ class CotizacionFastListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cotizacion
         fields = [
-            'id', 'fecha_creacion', 'codigo',
+            'id', 'fecha_creacion', 
             'cliente_nombre', 'cliente_identificacion',
             'usuario', 'total', 'estado_texto', 
             'tipo_evento_texto', 'total_detalles'
