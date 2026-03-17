@@ -15,14 +15,14 @@ from rest_framework.parsers import JSONParser
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.db.models import Q
 
-# @api_view(['GET'])
-# def get_productos(request):
-#     productos = Producto.objects.filter(deleted_at__isnull=True)
-#     serializer = ProductoSerializer(productos, many=True, context={'request': request})  # Agregar contexto
-#     return JsonResponse(serializer.data, safe=False) 
-
 @api_view(['GET'])
 def get_productos(request):
+    productos = Producto.objects.filter(deleted_at__isnull=True)
+    serializer = ProductoSerializer(productos, many=True, context={'request': request})  # Agregar contexto
+    return JsonResponse(serializer.data, safe=False) 
+
+@api_view(['GET'])
+def get_productos_optimizado(request):
     """
     Endpoint optimizado para obtener productos con paginación y búsqueda
     """
