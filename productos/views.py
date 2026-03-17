@@ -12,12 +12,84 @@ from django.utils import timezone
 import datetime
 import json
 from rest_framework.parsers import JSONParser
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.db.models import Q
+
+# @api_view(['GET'])
+# def get_productos(request):
+#     productos = Producto.objects.filter(deleted_at__isnull=True)
+#     serializer = ProductoSerializer(productos, many=True, context={'request': request})  # Agregar contexto
+#     return JsonResponse(serializer.data, safe=False) 
 
 @api_view(['GET'])
 def get_productos(request):
-    productos = Producto.objects.filter(deleted_at__isnull=True)
-    serializer = ProductoSerializer(productos, many=True, context={'request': request})  # Agregar contexto
-    return JsonResponse(serializer.data, safe=False) 
+    """
+    Endpoint optimizado para obtener productos con paginación y búsqueda
+    """
+    # Parámetros de paginación
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 20))
+    search = request.GET.get('search', '')  # 👈 NUEVO: parámetro de búsqueda
+    
+    # Consulta base
+    productos_query = Producto.objects.filter(
+        deleted_at__isnull=True
+    ).select_related(
+        'user', 'categoria_producto_id'
+    )
+    
+    # 👇 APLICAR FILTRO DE BÚSQUEDA SI EXISTE
+    if search:
+        productos_query = productos_query.filter(
+            Q(producto__icontains=search) |  # Buscar en nombre
+            Q(descripcion__icontains=search) |  # Buscar en descripción
+            Q(ubicacion__icontains=search)  # Buscar en ubicación
+        )
+    
+    # Ordenar
+    productos_query = productos_query.order_by('-id')
+    
+    # Paginación
+    paginator = Paginator(productos_query, page_size)
+    
+    try:
+        productos_page = paginator.page(page)
+    except:
+        productos_page = paginator.page(1)
+    
+    # Cachear catálogos (igual que antes)
+    from catalogos.models import Catalogo
+    catalogos = Catalogo.objects.filter(grupo__in=[1, 2])
+    
+    catalogos_grupo1 = {}
+    catalogos_grupo2 = {}
+    
+    for cat in catalogos:
+        if cat.grupo == 1:
+            catalogos_grupo1[cat.codigo] = {'item': cat.item, 'color': cat.color}
+        elif cat.grupo == 2:
+            catalogos_grupo2[cat.codigo] = {'item': cat.item, 'color': cat.color}
+    
+    context = {
+        'request': request,
+        'catalogos_grupo1': catalogos_grupo1,
+        'catalogos_grupo2': catalogos_grupo2
+    }
+    
+    serializer = ProductoSerializer(productos_page, many=True, context=context)
+    
+    return Response({
+        'data': serializer.data,
+        'pagination': {
+            'total': paginator.count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': paginator.num_pages,
+            'has_next': productos_page.has_next(),
+            'has_previous': productos_page.has_previous()
+        },
+        'search': search  
+    })
 
 @api_view(['GET'])
 def get_productos_inventario(request):
