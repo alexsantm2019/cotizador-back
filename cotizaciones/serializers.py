@@ -95,6 +95,28 @@ class CotizacionSerializer(serializers.ModelSerializer):
             }
         return None
 
+    def create(self, validated_data):
+        # ✅ FORMA CORRECTA: Obtener usuario del contexto
+        user = self.context.get('request').user
+        if user and user.is_authenticated:
+            validated_data['user'] = user
+        else:
+            # Si no hay usuario autenticado, puedes manejarlo como error
+            raise serializers.ValidationError({"user": "Usuario no autenticado"})
+            
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # ✅ Asignar el usuario del contexto
+        user = self.context.get('request').user
+        if user and user.is_authenticated:
+            validated_data['user'] = user
+        else:
+            raise serializers.ValidationError({"user": "Usuario no autenticado"})
+        
+        # Actualizar la instancia
+        return super().update(instance, validated_data)                
+
     # El resto del serializador sigue IGUAL...
     class Meta:
         db_table = 'cotizaciones'
